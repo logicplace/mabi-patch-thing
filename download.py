@@ -283,7 +283,7 @@ def make_patch(path, fn, ver):
 
 	# Unpack
 	print "Unpacking..."
-	zf = ZipFile(zipfn)
+	zf = ZipFile(zipfn, allowZip64=True)
 	try: os.makedirs(unpackdir)
 	except OSError as err:
 		if err.errno != 17: raise
@@ -326,7 +326,7 @@ def make_patch(path, fn, ver):
 	# Repack
 	print "Repacking..."
 	os.unlink(zipfn)
-	zf = ZipFile(zipfn, "w")
+	zf = ZipFile(zipfn, "w", allowZip64=True)
 	for root, dirs, files in os.walk(unpackdir, False):
 		for fn in files:
 			p = os.path.join(root, fn)
