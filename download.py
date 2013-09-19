@@ -118,14 +118,14 @@ def main():
 	if pfrom == "all":
 		download_txt(ftp, path, download + "_full.txt")
 		v = int(download) - 1
-		make_patch(path, download + "_full.txt", download)
+		make_patch(ftp, path, download + "_full.txt", download)
 		while download_txt(ftp, path, "%i_to_%s.txt" % (v, download)):
-			make_patch(path, "%i_to_%s.txt" % (v, download), download)
+			make_patch(ftp, path, "%i_to_%s.txt" % (v, download), download)
 			v -= 1
 		#endwhile
 	else:
 		download_txt(ftp, path, pfrom)
-		make_patch(path, pfrom, download)
+		make_patch(ftp, path, pfrom, download)
 	#endif
 #enddef
 
@@ -255,7 +255,7 @@ def verify_file(fn, size, md5):
 	return True
 #enddef
 
-def make_patch(path, fn, ver):
+def make_patch(ftp, path, fn, ver):
 	basename = fn.split(".", 1)[0]
 	print "Making patch for " + basename
 	# Concat
@@ -274,6 +274,7 @@ def make_patch(path, fn, ver):
 			data = f1.read(1048576)
 			if not data: break
 			f2.write(data)
+			ftp.sendcmd("NOOP")
 		#endwhile
 		f1.close()
 	#enddef
@@ -292,6 +293,7 @@ def make_patch(path, fn, ver):
 		to = os.path.join(*([unpackdir] + zfn.split("\\")[0:-1]))
 		zf.extract(zfn, to)
 		os.rename(os.path.join(to, zfn), os.path.join(to, zfn.split("\\")[-1]))
+		ftp.sendcmd("NOOP")
 	#endfor
 	zf.close()
 
@@ -332,6 +334,7 @@ def make_patch(path, fn, ver):
 			p = os.path.join(root, fn)
 			zf.write(p, p[len(unpackdir):])
 			os.unlink(p)
+			ftp.sendcmd("NOOP")
 		#endfor
 		for d in dirs: os.rmdir(os.path.join(root, d))
 	#endfor
