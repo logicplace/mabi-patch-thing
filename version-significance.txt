@@ -182,3 +182,4 @@ launcher_147 - Jul. 13, 2013
 165 - Aug. 30, 2013
 Patch piece extensions changed from %i to %03i
 166 - Sep. 18, 2013 - Enlightenment
+FTP server removed LIST.
