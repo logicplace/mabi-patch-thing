@@ -105,6 +105,8 @@ def main():
 		else: break
 	#endwhile
 
+	if ca: yn("Continue anyway")
+
 	# Downloads!
 	path = os.path.join(FILEBASE, download)
 	try: os.makedirs(path)
