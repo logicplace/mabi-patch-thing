@@ -161,7 +161,7 @@ class PatchServer:
 		for fn, d2 in f2.items():
 			if fn in f1:
 				# Both versions have this file, compare mtime.
-				d1 = d1[fn]
+				d1 = f1[fn]
 				if d1["mtime"] != d2["mtime"]:
 					changes[fn] = d2
 					statuses[fn] = "update"
@@ -211,6 +211,7 @@ class PatchServer:
 						conn = self._getURL(url, obj, "patch server")
 
 						compressed = conn.read()
+						clen = len(compressed)
 
 						logging.info("  Downloaded part " + obj)
 
@@ -218,7 +219,9 @@ class PatchServer:
 						logging.debug("  Decompressed part " + obj)
 
 						dlen = len(decompressed)
-						if dlen != fsize[i]:
+						
+						# I dunno man
+						if clen != fsize[i] and dlen != fsize[i]:
 							logging.warn("  Unexpected filesize {} for part {}, expecting {}.".format(dlen, obj, fsize[i]))
 						#endif
 
@@ -350,13 +353,28 @@ def main(args):
 
 	patcher = PatchServer()
 
+	if not args.download and not patcher.getWebLaunchStatus():
+		answer = input(
+			"The web launcher indicates the game is down.\n"
+			"If the game is down for maintainence for the current patch,\n"
+			"there is a chance the patch could be changed before the game is back up.\n"
+			"Do you want to continue (Y/N)? ")
+		if answer.upper()[:1] != "Y": return 0
+	#endif
+
 	path = args.path or os.getcwd()
 
 	if args.update:
 		patcher.update(path)
 		print("Update complete.")
 	else:
-		version = args.download
+		try:
+			version = int(args.download)
+		except ValueError:
+			logging.error("Please enter a number for the version.")
+			return 1
+		#endtry
+
 		if args.full:
 			patcher.downloadFull(path, version)
 		else:
