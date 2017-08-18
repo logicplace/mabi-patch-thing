@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #-*- coding:utf-8 -*-
 
-import urllib2, re, sys, ftplib, os, hashlib, struct
+import urllib2, re, sys, ftplib, os, hashlib, struct, socket
 from zipfile import ZipFile
 
 FILEBASE = ""
@@ -23,7 +23,7 @@ def main():
 		"lang": "patch_langpack.txt"
 	}
 	try: h = urllib2.urlopen("http://www.nexon.net/json/game_status.js")
-	except urllib2.HTTPError as err:
+	except (urllib2.HTTPError, socket.error) as err:
 		print "Failed to retrieve Game Status."
 		print err
 		print WARNING
