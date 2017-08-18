@@ -183,3 +183,15 @@ launcher_147 - Jul. 13, 2013
 Patch piece extensions changed from %i to %03i
 166 - Sep. 18, 2013 - Enlightenment
 FTP server removed LIST.
+167 - Uploaded same day as 168
+168 - Oct. 16, 2013
+169 - Same day as 170?
+170 - Oct. 30, 2013
+...
+182 - Mar. 13, 2014
+183 - Mar. 27, 2014
+184 - Apr. 30, 2014 - Culinary Artist
+185 - May 21, 2014
+186 - ??
+187 - Jun. 24, 2014 - New Beginnings/Anime Summer
+188 - Jul. 02, 2014
