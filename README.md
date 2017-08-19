@@ -28,4 +28,4 @@ or just `python3 download.py -u` if you're in the mabi folder.
        -fud continues a full download of the specified version. Ignores -F
     -m Downloads the manifest to manifest.json. It does not prevent updating.
     -v Shows more information, like what files are downloading.
-    -vv Shoes debug information you likely won't need.
+    -vv Shows debug information you likely won't need.
