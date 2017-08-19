@@ -40,6 +40,9 @@ class PatchServer:
 
 		self.local_version = None
 		self.target_version = None
+
+		self.manifest = None
+		self.manifestVersion = None
 	#enddef
 
 	def _getURL(self, url, fileName=None, serverName=None):
@@ -59,7 +62,7 @@ class PatchServer:
 		conn = self._getURL("http://www.nexon.net/json/game_status.js", "status file")
 
 		# Have to de-JSONp this.
-		response = JSON.loads(conn.read()[len("nexon.games.playGame(") : -2])
+		response = json.loads(conn.read()[len("nexon.games.playGame(") : -2].decode("utf8"))
 
 		# This is Mabi's ID here
 		status = response["SVG012"]
@@ -72,7 +75,7 @@ class PatchServer:
 		conn = self._getURL("http://mabipatchinfo.nexon.net/patch/patch.txt", "patch info file")
 
 		# Format is a list of var=val, one per line.
-		txt = conn.read().split("\n")
+		txt = conn.read().decode("utf8").split("\n")
 		for line in txt:
 			var, val = line.split("=", maxsplit=1)
 			if var.strip() == "main_version": return int(val.strip())
@@ -84,7 +87,7 @@ class PatchServer:
 	def getLatestVersion(self):
 		""" Get the latest version as reported by some server. """
 		if NexonAPI is None:
-			ver = legacyGetLatestVersion()
+			ver = self.legacyGetLatestVersion()
 		else:
 			ver = NexonAPI.getLatestVersion()
 		#endif
@@ -111,9 +114,16 @@ class PatchServer:
 
 	def getManifest(self, version=None):
 		""" Get the manifest file from the server and decode it. """
+		version = version or self.target_version
+
+		if version == self.manifestVersion:
+			logging.debug("Reusing manifest from cache.")
+			return self.manifest
+		#endif
+
 		properties = {
 			"gameID": self.GAME_ID,
-			"version": version or self.target_version
+			"version": version
 		}
 
 		# First download the hash
@@ -123,7 +133,7 @@ class PatchServer:
 
 		properties["hash"] = conn.read().strip().decode("utf8")
 
-		logging.info("Hash downloaded.")
+		logging.debug("Hash downloaded.")
 
 		# Now download the manifest
 		manifestURL = self.BASE_URL + self.MANIFEST_URL.format(**properties)
@@ -134,7 +144,7 @@ class PatchServer:
 		manifest = zlib.decompress(manifest)
 		# TODO: handle zlib errors
 
-		logging.info("Manifest decompressed.")
+		logging.debug("Manifest decompressed.")
 
 		manifest = json.loads(manifest.decode("utf8"))
 
@@ -149,7 +159,19 @@ class PatchServer:
 			del files[key]
 		#endfor
 
+		self.manifest = manifest
+		self.manifestVersion = version
+
 		return manifest
+	#enddef
+
+	def dumpManifest(self, filename, manifest=None):
+		""" Dump the given or last retrieved manifest to a file. """
+		manifest = manifest or self.manifest
+
+		with open(filename, "w") as f:
+			json.dump(manifest, f, indent=4, sort_keys=True)
+		#endwith
 	#enddef
 
 	def diffManifests(self, m1, m2):
@@ -183,15 +205,39 @@ class PatchServer:
 			#endif
 		#endfor
 
-		logging.info("Files affected between the specified manifests: {} updated, {} created, {} deleted".format(updated, created, deleted))
+		logging.info("Files/dirs affected between the specified manifests: {} to update, {} to create, {} to delete".format(updated, created, deleted))
 
 		return changes, statuses
 	#enddef
 
-	def diffManifestWithFileSystem(self, manifest, path):
+	def diffManifestWithFileSystem(self, base, manifest=None):
 		""" Check the manifest against the path for updating. """
-		# TODO
-		pass
+		manifest = manifest or self.manifest
+		files = manifest["files"]
+		changes, statuses = {}, {}
+		updated, created = 0, 0
+
+		for fn, data in files.items():
+			path = os.path.join(base, fn)
+			try:
+				fsize = os.path.getsize(path)
+				mtime = int(os.path.getmtime(path))
+				if mtime != data["mtime"] or fsize != data["fsize"]:
+					changes[fn] = data
+					statuses[fn] = "update"
+					updated += 1
+				#endif
+
+			except (FileNotFoundError, NotADirectoryError):
+				changes[fn] = data
+				statuses[fn] = "create"
+				created += 1
+			#endtry
+		#endfor
+
+		logging.info("Files/dirs affected in update: {} to update, {} to create".format(updated, created))
+
+		return changes, statuses
 	#enddef
 
 	def downloadFiles(self, path, files):
@@ -204,6 +250,11 @@ class PatchServer:
 
 			# Don't worry about creating new folders, whatever checks the statuses should do that.
 			try:
+				if data["objects"][0] == "__DIR__":
+					os.makedirs(fpath, exist_ok=True)
+					continue
+				#endif
+
 				with open(fpath, "wb") as f:
 					logging.info("Downloading file " + fn)
 					for i, obj in enumerate(data["objects"]):
@@ -219,7 +270,7 @@ class PatchServer:
 						logging.debug("  Decompressed part " + obj)
 
 						dlen = len(decompressed)
-						
+
 						# I dunno man
 						if clen != fsize[i] and dlen != fsize[i]:
 							logging.warn("  Unexpected filesize {} for part {}, expecting {}.".format(dlen, obj, fsize[i]))
@@ -269,7 +320,7 @@ class PatchServer:
 
 		manifest = self.getManifest(ver)
 
-		changes, statuses = self.diffManifestWithFileSystem(manifest)
+		changes, statuses = self.diffManifestWithFileSystem(path, manifest)
 		self.updateFileSystem(path, statuses)
 
 		# FUTURE?: Select only local_to_latest.pack if available.
@@ -277,14 +328,25 @@ class PatchServer:
 		self.downloadFiles(path, changes)
 	#enddef
 
-	def download(self, path, f=None, t=None):
-		""" Download patch f_to_t. """
-		if f and not t:
+	def _ver(self, path, f, t):
+		if f and t is None:
 			f, t = f - 1, f
 		else:
-			f = f or self.local_version or self.getLocalVersion(path)
+			try:
+				f = f or self.local_version or self.getLocalVersion(path)
+			except PatchServerError:
+				f = t - 1
+			#endtry
+			
 			t = t or self.target_version or self.getLatestVersion()
 		#endif
+
+		return (f - 1 if f == t else f), t
+	#enddef
+
+	def download(self, path, f=None, t=None):
+		""" Download patch f_to_t. """
+		f, t = self._ver(path, f, t)
 
 		m1 = self.getManifest(f)
 		m2 = self.getManifest(t)
@@ -312,20 +374,50 @@ class PatchServer:
 
 		self.downloadFiles(path, files)
 	#enddef
+
+	def continueDownload(self, path, f=None, t=None):
+		""" Continue downloading an update. """
+		f, t = self._ver(path, f, t)
+
+		m1 = self.getManifest(f)
+		m2 = self.getManifest(t)
+
+		changes, statuses = self.diffManifests(m1, m2)
+		changes, statuses = self.diffManifestWithFileSystem(path, {"files": changes})
+		self.updateFileSystem(path, statuses)
+
+		self.downloadFiles(path, changes)
+	#enddef
+
+	def continueDownloadFull(self, path, version=None):
+		""" Continue downloading an update. """
+		version = version or self.target_version or self.getLatestVersion()
+
+		manifest = self.getManifest(version)
+
+		changes, statuses = self.diffManifestWithFileSystem(path, manifest)
+		self.updateFileSystem(path, statuses)
+
+		# FUTURE?: Select only local_to_latest.pack if available.
+
+		self.downloadFiles(path, changes)
+	#enddef
 #endclass
 
 
 def main(args):
 	parser = argparse.ArgumentParser(description="Download Mabinogi NA patches.")
-	g1 = parser.add_mutually_exclusive_group()
-	g1.add_argument("-u", "--update", action="store_true",
+	parser.add_argument("-u", "--update", action="store_true",
 		help="Update the mabi installation at the given location.")
-	g2 = g1.add_argument_group()
-	g2.add_argument("-d", "--download", default=None,
+	parser.add_argument("-d", "--download", default=0,
 		help="Download a specific version.")
-	g2.add_argument("-f", "--full", action="store_true",
+	parser.add_argument("-f", "--full", action="store_true",
 		help="Download all the files instead of just updating.")
-	parser.add_argument("-v", "--verbose", action="store_true",
+	parser.add_argument("-F", "--from", dest="fromVer", action="store_true", default=0,
+		help="Consider the installation to be this version.")
+	parser.add_argument("-m", "--manifest", action="store_true",
+		help="Download the manifest to manifest.json")
+	parser.add_argument("-v", "--verbose", action="count",
 		help="Print extra information.")
 	parser.add_argument("path", nargs="?", default="",
 		help="Base Mabinogi installation directory.")
@@ -337,8 +429,11 @@ def main(args):
 	args = parser.parse_args(args)
 
 	logging.basicConfig(
-		level=logging.INFO if args.verbose else logging.WARNING,
-		style="{", format="{levelname}: {message}",
+		level = {
+			0: logging.WARNING,
+			1: logging.INFO,
+		}.get(args.verbose, logging.DEBUG),
+		style = "{", format="{levelname}: {message}",
 	)
 
 	if NexonAPI:
@@ -364,22 +459,38 @@ def main(args):
 
 	path = args.path or os.getcwd()
 
+	try:
+		target = int(args.download)
+		version = (int(args.fromVer), target)
+	except ValueError:
+		logging.error("Please enter a number for the version.")
+		return 1
+	#endtry
+
+	if args.manifest:
+		patcher.getManifest(target)
+		patcher.dumpManifest(os.path.join(path, "manifest.json"))
+
+		print("Dumpped manifest to manifest.json")
+	#endif
+
 	if args.update:
-		patcher.update(path)
+		if args.full:
+			patcher.continueDownloadFull(path, target)
+		elif args.download:
+			patcher.continueDownload(path, *version)
+		else:
+			patcher.update(path)
+		#endif
+
 		print("Update complete.")
 	else:
-		try:
-			version = int(args.download)
-		except ValueError:
-			logging.error("Please enter a number for the version.")
-			return 1
-		#endtry
-
 		if args.full:
-			patcher.downloadFull(path, version)
+			patcher.downloadFull(path, target)
 		else:
-			patcher.download(path, version)
+			patcher.download(path, *version)
 		#endif
+
 		print("Download complete.")
 	#endif
 
