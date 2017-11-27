@@ -413,7 +413,7 @@ def main(args):
 		help="Download a specific version.")
 	parser.add_argument("-f", "--full", action="store_true",
 		help="Download all the files instead of just updating.")
-	parser.add_argument("-F", "--from", dest="fromVer", action="store_true", default=0,
+	parser.add_argument("-F", "--from", dest="fromVer", default=0,
 		help="Consider the installation to be this version.")
 	parser.add_argument("-m", "--manifest", action="store_true",
 		help="Download the manifest to manifest.json")
