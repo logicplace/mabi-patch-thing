@@ -250,7 +250,7 @@ class PatchServer:
 
 			# Don't worry about creating new folders, whatever checks the statuses should do that.
 			try:
-				if data["objects"][0] == "__DIR__":
+				if len(data["objects"]) and data["objects"][0] == "__DIR__":
 					os.makedirs(fpath, exist_ok=True)
 					continue
 				#endif
